@@ -84,9 +84,9 @@ from send2trash import send2trash
 
 CURRENT_VERSION = "1.0"
 
-VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/AutoChecker/main/version.txt"
+VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
-PYTHON_URL = "https://raw.githubusercontent.com/GreenPo-cloud/AutoChecker/main/AutoChecker.py"
+PYTHON_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/DOG.py"
 
 
 def check_for_updates():
