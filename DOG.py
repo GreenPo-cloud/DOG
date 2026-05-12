@@ -348,39 +348,53 @@ def copy_pdf_with_retry(file_path):
 
         except Exception as e:
             print(f"❌ Ошибка копирования: {e}")
-            print("⏳ Повтор через 5 секунд...")
-            time.sleep(5)
+            print("⏳ Повтор через 15 секунд...")
+            time.sleep(15)
 
 
 def copy_photo_from_network():
-    number = input("Введите номер: #")
 
-    # путь к сетевой папке
+    number = input("Введите номер: #").strip()
+
+    order_id = f"#{number}"
+
+    # сетевая папка
     network_folder = r"\\GREENPO\Foto"
-
-    # возможные расширения
-    extensions = [".jpg", ".png", ".jpeg"]
-
-    found_file = None
-
-    for ext in extensions:
-        file_path = os.path.join(network_folder, f"#{number}{ext}")
-        if os.path.exists(file_path):
-            found_file = file_path
-            break
-
-    if not found_file:
-        print("❌ Фото не найдено")
-        return
 
     # рабочий стол
     desktop = Path.home() / "Desktop"
 
-    destination = desktop / os.path.basename(found_file)
+    copied = 0
 
-    shutil.copy(found_file, destination)
+    try:
 
-    print(f"✅ Скопировано: {destination}")
+        for filename in os.listdir(network_folder):
+
+            lower = filename.lower()
+
+            # проверяем:
+            # начинается ли файл с номера заказа
+            # и является ли изображением
+            if (
+                filename.startswith(order_id)
+                and lower.endswith((".jpg", ".jpeg", ".png"))
+            ):
+
+                source = os.path.join(network_folder, filename)
+
+                destination = desktop / filename
+
+                shutil.copy(source, destination)
+
+                copied += 1
+
+        if copied == 0:
+            print("❌ Фото не найдено")
+        else:
+            print(f"✅ Скопировано файлов: {copied}")
+
+    except Exception as e:
+        print(f"❌ Ошибка: {e}")
 
 
 def extract_order_numbers(pdf_path):
@@ -427,7 +441,7 @@ def extract_order_numbers(pdf_path):
                     score = fuzz.partial_ratio("ups access point", tail_block.lower())
 
                     if score >= 90:
-                        print(f"⚠️ ОБНАРУЖЕН UPS Access Point: {order_number}")
+                        print(f"⚠️⚠️ ОБНАРУЖЕН UPS Access Point: {order_number}")
                         access_point_found = True
                         play_sound(UPS_ACCESS_POINT_OBJ)
 
@@ -644,6 +658,7 @@ def start_watchdog():
 
     # 🔥 горячая клавиша
     keyboard.add_hotkey('F1', copy_photo_from_network)
+    keyboard.add_hotkey('F2', check_for_updates)
 
     try:
         keyboard.wait()  # просто ждём события
@@ -708,7 +723,7 @@ def com_listener(port=comPort, baudrate=9600):
             if not scanned:
                 continue
 
-            print(f"📥 Скан: {scanned}")
+            # print(f"📥 Скан: {scanned}")
 
             resolved_key, resolved_type = resolve_code(scanned, orders_dict)
 
@@ -720,12 +735,12 @@ def com_listener(port=comPort, baudrate=9600):
             # --- первый скан ---
             if first is None:
                 first = (resolved_key, resolved_type)
-                print(f"🟡 Первый: {first}")
+                # print(f"🟡 Первый: {first}")
                 continue
 
             # --- второй скан ---
             second = (resolved_key, resolved_type)
-            print(f"🔵 Второй: {second}")
+            # print(f"🔵 Второй: {second}")
 
             first_key, first_type = first
             second_key, second_type = second
