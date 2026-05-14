@@ -73,6 +73,10 @@ import cv2
 import pygame
 import requests
 from send2trash import send2trash
+import win32event
+import win32api
+import winerror
+import ctypes
 
 
 
@@ -87,6 +91,18 @@ CURRENT_VERSION = "1.0"
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
 PYTHON_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/DOG.py"
+
+
+mutex = win32event.CreateMutex(None, False, "RepackSystemMutex")
+
+if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+    ctypes.windll.user32.MessageBoxW(
+        0,
+        "Программа уже запущена",
+        "Ошибка",
+        0x10
+    )
+    sys.exit(0)
 
 
 def check_for_updates():
@@ -182,7 +198,7 @@ UPS_ACCESS_POINT_SOUND = desktop / "ups.mp3"
 GOOD_SOUND_OBJ = pygame.mixer.Sound(str(GOOD_SOUND))
 BAD_SOUND_OBJ = pygame.mixer.Sound(str(BAD_SOUND))
 ERROR_SOUND_OBJ = pygame.mixer.Sound(str(ERROR_SOUND))
-UPS_ACCESS_POINT_OBJ = pygame.mixer.Sound(str(UPS_ACCESS_POINT_SOUND))
+UPS = pygame.mixer.Sound(str(UPS_ACCESS_POINT_SOUND))
 
 all_good_event = threading.Event()
 camera_ready_event = threading.Event()
@@ -443,7 +459,7 @@ def extract_order_numbers(pdf_path):
                     if score >= 90:
                         print(f"⚠️⚠️ ОБНАРУЖЕН UPS Access Point: {order_number}")
                         access_point_found = True
-                        play_sound(UPS_ACCESS_POINT_OBJ)
+                        play_sound(UPS)
 
                     order_data = [order_number, name, stealth_flag]
 
