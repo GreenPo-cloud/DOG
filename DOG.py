@@ -189,6 +189,8 @@ pygame.mixer.init()
 desktop = Path.home() / "Desktop"
 photo_folder = desktop / "RepackFoto"
 photo_folder.mkdir(exist_ok=True)
+logs_folder = photo_folder / "Logs"
+logs_folder.mkdir(exist_ok=True)
 
 GOOD_SOUND = desktop / "good.mp3"
 BAD_SOUND = desktop / "bad.mp3"
@@ -203,6 +205,7 @@ UPS = pygame.mixer.Sound(str(UPS_ACCESS_POINT_SOUND))
 all_good_event = threading.Event()
 camera_ready_event = threading.Event()
 current_key = None  # глобально
+current_worker = None
 
 comPort = "COM3"
 CAMERA_ID = 1
@@ -212,6 +215,14 @@ FOCUS = 360  # подставь своё значение
 LABEL_PATH = r"C:\Users\fastb\Desktop\order_barcode.dymo"
 STEALTH_LABEL_PATH = r"C:\Users\fastb\Desktop\stealth_barcode.dymo"
 PRINTER_NAME = "DYMO LabelWriter 450 Twin Turbo"
+
+
+
+workers_dict = {
+    "Egor": "egor",
+    "Alex": "alex",
+    "John": "john"
+}
 
 
 orders_dict = {
@@ -717,15 +728,28 @@ def resolve_code(code, mapping):
         return best_match, "value"
 
     return None, None
+
+
+def resolve_worker(code, workers):
+    code = code.lower()
+
+    for worker_name, worker_value in workers.items():
+        if worker_value.lower() in code:
+            return worker_name
+
+    return None
  
     
 def com_listener(port=comPort, baudrate=9600):
     global current_key
+    global current_worker
+
     ser = serial.Serial(port, baudrate, timeout=0.1)
 
     print(f"📡 Слушаю {port}...")
 
-    first = None
+    first_pair = None
+    worker_name = None
 
     while True:
         try:
@@ -739,8 +763,15 @@ def com_listener(port=comPort, baudrate=9600):
             if not scanned:
                 continue
 
-            # print(f"📥 Скан: {scanned}")
+            # --- проверка сотрудника ---
+            resolved_worker = resolve_worker(scanned, workers_dict)
 
+            if resolved_worker:
+                worker_name = resolved_worker
+                print(f"👤 Сотрудник: {worker_name}")
+                continue
+
+            # --- проверка продукта ---
             resolved_key, resolved_type = resolve_code(scanned, orders_dict)
 
             if not resolved_key:
@@ -748,37 +779,71 @@ def com_listener(port=comPort, baudrate=9600):
                 play_sound(ERROR_SOUND_OBJ)
                 continue
 
-            # --- первый скан ---
-            if first is None:
-                first = (resolved_key, resolved_type)
-                # print(f"🟡 Первый: {first}")
+            # --- первый продукт ---
+            if first_pair is None:
+                first_pair = (resolved_key, resolved_type)
                 continue
 
-            # --- второй скан ---
-            second = (resolved_key, resolved_type)
-            # print(f"🔵 Второй: {second}")
+            # --- второй продукт ---
+            second_pair = (resolved_key, resolved_type)
 
-            first_key, first_type = first
-            second_key, second_type = second
+            first_key, first_type = first_pair
+            second_key, second_type = second_pair
 
-            # 🔥 ГЛАВНАЯ ПРОВЕРКА
-            if (
+            # --- проверка продукта ---
+            product_ok = (
                 first_key == second_key and
-                first_type != second_type  # один key, другой value
-            ):
-                print("✅ ALL GOOD")
+                first_type != second_type
+            )
+
+            # --- итоговая проверка ---
+            if product_ok and worker_name:
+
+                print(f"✅ ALL GOOD ({worker_name})")
                 play_sound(GOOD_SOUND_OBJ)
+
                 current_key = first_key
+                current_worker = worker_name
+
                 all_good_event.set()
+
             else:
                 print("❌ NOT GOOD")
                 play_sound(BAD_SOUND_OBJ)
 
-            # сброс
-            first = None
+            # --- сброс ---
+            first_pair = None
+            worker_name = None
 
         except Exception as e:
             print(f"❌ Ошибка COM: {e}")
+            
+def write_worker_log(worker_name, product_key):
+    log_file = logs_folder / f"{worker_name}.txt"
+
+    now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+
+    lines = []
+
+    # читаем старый файл
+    if log_file.exists():
+        with open(log_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+    # убираем первую строку count
+    entries = lines[1:] if lines else []
+
+    # добавляем новую запись
+    entries.append(f"{product_key}   {now}\n")
+
+    # обновляем count
+    count = len(entries)
+
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.write(f"========== Count: {count} ==========\n")
+
+        for line in entries:
+            f.write(line)
             
             
 
@@ -833,6 +898,7 @@ def camera_worker():
 
                 cv2.imwrite(str(filepath), frame)
                 print(f"📸 Фото сохранено: {filename}")
+                write_worker_log(current_worker, current_key)
                 play_sound(GOOD_SOUND_OBJ)
 
         # --- проверка простоя ---
