@@ -77,6 +77,7 @@ import win32event
 import win32api
 import winerror
 import ctypes
+import json
 
 
 
@@ -86,7 +87,7 @@ import ctypes
 
 
 
-CURRENT_VERSION = "1.0"
+CURRENT_VERSION = "1.1"
 
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
@@ -192,6 +193,12 @@ photo_folder.mkdir(exist_ok=True)
 logs_folder = photo_folder / "Logs"
 logs_folder.mkdir(exist_ok=True)
 
+BASE_DIR = Path(__file__).resolve().parent
+
+workers_json_path = BASE_DIR / "workers.json"
+with open(workers_json_path, "r", encoding="utf-8") as f:
+    workers_dict = json.load(f)
+
 GOOD_SOUND = desktop / "good.mp3"
 BAD_SOUND = desktop / "bad.mp3"
 ERROR_SOUND = desktop / "error.mp3"
@@ -216,13 +223,6 @@ LABEL_PATH = r"C:\Users\fastb\Desktop\order_barcode.dymo"
 STEALTH_LABEL_PATH = r"C:\Users\fastb\Desktop\stealth_barcode.dymo"
 PRINTER_NAME = "DYMO LabelWriter 450 Twin Turbo"
 
-
-
-workers_dict = {
-    "Egor": "egor",
-    "Alex": "alex",
-    "John": "john"
-}
 
 
 orders_dict = {
@@ -958,7 +958,7 @@ def cleanup_old_photos(folder, older_days):
 
 if __name__ == "__main__":
     FOTO = os.path.join(desktop, "RepackFoto")
-    today = datetime.datetime.now().day
+    today = datetime.now().day
 
     if today == 5:
         cleanup_old_photos(FOTO, 12)
