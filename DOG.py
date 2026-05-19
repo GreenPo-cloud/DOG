@@ -83,13 +83,14 @@ import signal
 
 ser = None
 cap = None
+running = True
 
 
 
 
 
 
-CURRENT_VERSION = "1.2"
+CURRENT_VERSION = "1.3"
 
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
@@ -369,9 +370,10 @@ orders_dict = {
 
 
 def copy_pdf_with_retry(file_path):
+    global running
     network_folder = r"\\GREENPO\Downloads"
 
-    while True:
+    while running:
         try:
             destination = os.path.join(network_folder, os.path.basename(file_path))
             shutil.copy(file_path, destination)
@@ -692,6 +694,7 @@ def start_watchdog():
     # 🔥 горячая клавиша
     keyboard.add_hotkey('F1', copy_photo_from_network)
     keyboard.add_hotkey('F2', check_for_updates)
+    keyboard.add_hotkey('F3', cancel_order_greenpo_manual)
 
     try:
         keyboard.wait()  # просто ждём события
@@ -699,6 +702,140 @@ def start_watchdog():
         observer.stop()
 
     observer.join()
+    
+    
+def cancel_order_greenpo_manual():
+
+    order = input("Enter cancelled order number: #").strip()
+
+    if not order.isdigit():
+        print("Invalid order number")
+        return
+
+    order_id = f"#{order}"
+
+    status = get_greenpo_order_status(order_id)
+
+    success = update_greenpo_statistics(
+        order_id,
+        add_cancelled=True
+    )
+
+    if success:
+
+        # ===== already completed =====
+        if status == "completed":
+
+            print(f"⚠️ COMPLETED ORDER CANCELLED: {order_id}")
+            print("⚠️ GO FIND THIS ORDER AMONG COMPLETED")
+
+        else:
+
+            print(f"❌ ORDER CANCELLED: {order_id}")
+
+    else:
+
+        print(f"❌ ACTIVE ORDER NOT FOUND: {order_id}")
+        
+def get_greenpo_order_status(order_id):
+
+    network_folder = r"\\GREENPO\Desktop\Statistik"
+
+    today = datetime.now().strftime("%d.%m.%Y")
+
+    stat_file = os.path.join(
+        network_folder,
+        f"{today}.txt"
+    )
+
+    if not os.path.exists(stat_file):
+        return "not_found"
+
+    try:
+
+        with open(stat_file, "r", encoding="utf-8") as f:
+
+            for line in f:
+
+                stripped = line.strip()
+
+                if stripped.startswith(order_id):
+
+                    has_cancelled = "Cancelled" in stripped
+                    has_completed = "+" in stripped or "(+)" in stripped
+
+                    # ===== completed + cancelled =====
+                    if has_cancelled and has_completed:
+                        return "completed_cancelled"
+
+                    # ===== cancelled =====
+                    if has_cancelled:
+                        return "cancelled"
+
+                    # ===== completed =====
+                    if has_completed:
+                        return "completed"
+
+                    # ===== active =====
+                    return "active"
+
+        return "not_found"
+
+    except Exception as e:
+        print(f"❌ STATUS ERROR: {e}")
+        return "not_found"
+    
+
+def update_greenpo_statistics(order_id, add_cancelled=False):
+
+    updated = False
+
+    network_folder = r"\\GREENPO\Desktop\Statistik"
+
+    today = datetime.now().strftime("%d.%m.%Y")
+
+    stat_file = os.path.join(
+        network_folder,
+        f"{today}.txt"
+    )
+
+    if not os.path.exists(stat_file):
+        return False
+
+    try:
+
+        with open(stat_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        updated_lines = []
+
+        for line in lines:
+
+            stripped = line.strip()
+
+            if stripped.startswith(order_id):
+
+                # уже cancelled
+                if "Cancelled" in stripped:
+                    updated_lines.append(line)
+                    continue
+
+                if add_cancelled:
+                    stripped += " Cancelled"
+
+                line = stripped + "\n"
+
+                updated = True
+
+            updated_lines.append(line)
+
+        with open(stat_file, "w", encoding="utf-8") as f:
+            f.writelines(updated_lines)
+
+    except Exception as e:
+        print(f"❌ GREENPO UPDATE ERROR: {e}")
+
+    return updated
     
 
 
@@ -747,6 +884,7 @@ def resolve_worker(code, workers):
  
     
 def com_listener(port=comPort, baudrate=9600):
+    global running
     global ser
     global current_key
     global current_worker
@@ -758,7 +896,7 @@ def com_listener(port=comPort, baudrate=9600):
     first_pair = None
     worker_name = None
 
-    while True:
+    while running:
         try:
             raw = ser.readline()
 
@@ -867,13 +1005,14 @@ def init_camera():
 
 
 def camera_worker():
+    global running
     global cap
     global current_key
 
     cap = None
     last_event_time = None
 
-    while True:
+    while running:
         # ждём сигнал (но не бесконечно)
         triggered = all_good_event.wait(timeout=1)
 
