@@ -42,6 +42,7 @@ REQUIRED_PACKAGES = [
     ("pygame", "pygame"),
     ("requests", "requests"),
     ("send2trash", "send2trash"),
+    ("win32event", "pywin32")
 
 ]
 
@@ -78,20 +79,23 @@ import win32api
 import winerror
 import ctypes
 import json
+import signal
+
+ser = None
+cap = None
 
 
 
 
 
 
-
-
-
-CURRENT_VERSION = "1.1"
+CURRENT_VERSION = "1.2"
 
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
 PYTHON_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/DOG.py"
+
+win32api.SetConsoleCtrlHandler(lambda x: shutdown_handler(), True)
 
 
 mutex = win32event.CreateMutex(None, False, "RepackSystemMutex")
@@ -103,7 +107,7 @@ if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
         "Ошибка",
         0x10
     )
-    sys.exit(0)
+    os._exit(0)
 
 
 def check_for_updates():
@@ -166,6 +170,8 @@ del "%~f0"
 
     except Exception as e:
         print(f"XXX Update failed: {e}")
+        
+
         
         
 
@@ -441,7 +447,7 @@ def extract_order_numbers(pdf_path):
                     continue
 
                 pattern = re.findall(
-                    r"(#\d+)(?=[^#]*☐)"       # ← ФИЛЬТР
+                    r"(?m)^(#\d+)(?=[^#]*☐)"       # ← ФИЛЬТР
                     r".*?type( STEALTH)?"
                     r"\s*\n(.*?)\s*☐"
                     r".*?(UPS|Zasilkovna|Postal)"
@@ -741,6 +747,7 @@ def resolve_worker(code, workers):
  
     
 def com_listener(port=comPort, baudrate=9600):
+    global ser
     global current_key
     global current_worker
 
@@ -860,6 +867,7 @@ def init_camera():
 
 
 def camera_worker():
+    global cap
     global current_key
 
     cap = None
@@ -951,6 +959,41 @@ def cleanup_old_photos(folder, older_days):
 
     if removed:
         print(f"* Old photos moved to trash: {removed}")
+        
+        
+        
+        
+        
+def shutdown_handler(sig=None, frame=None):
+    global ser
+    global cap
+
+    print("🛑 Завершение программы...")
+
+    try:
+        if ser and ser.is_open:
+            ser.close()
+            print("🔌 COM порт закрыт")
+    except Exception as e:
+        print(f"Ошибка закрытия COM: {e}")
+
+    try:
+        if cap is not None:
+            cap.release()
+            print("📷 Камера освобождена")
+    except Exception as e:
+        print(f"Ошибка закрытия камеры: {e}")
+
+    try:
+        pygame.mixer.quit()
+    except:
+        pass
+
+    os._exit(0)
+
+signal.signal(signal.SIGINT, shutdown_handler)
+signal.signal(signal.SIGTERM, shutdown_handler)
+
 
 
 
