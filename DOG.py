@@ -90,7 +90,7 @@ running = True
 
 
 
-CURRENT_VERSION = "1.3"
+CURRENT_VERSION = "1.4"
 
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
@@ -449,12 +449,12 @@ def extract_order_numbers(pdf_path):
                     continue
 
                 pattern = re.findall(
-                    r"(?m)^(#\d+)(?=[^#]*☐)"       # ← ФИЛЬТР
+                    r"(?m)^(#\d+)(?=[^#]*☐)"
                     r".*?type( STEALTH)?"
                     r"\s*\n(.*?)\s*☐"
                     r".*?(UPS|Zasilkovna|Postal)"
                     r"(.*?)"
-                    r"(?=#\d+|$)",
+                    r"(?=^#\d+|\Z)",
                     text,
                     re.DOTALL
                 )
