@@ -90,7 +90,7 @@ running = True
 
 
 
-CURRENT_VERSION = "1.4"
+CURRENT_VERSION = "1.5"
 
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
@@ -739,7 +739,7 @@ def cancel_order_greenpo_manual():
         
 def get_greenpo_order_status(order_id):
 
-    network_folder = r"\\GREENPO\Desktop\Statistik"
+    network_folder = r"\\GREENPO\Statistik"
 
     today = datetime.now().strftime("%d.%m.%Y")
 
@@ -790,7 +790,7 @@ def update_greenpo_statistics(order_id, add_cancelled=False):
 
     updated = False
 
-    network_folder = r"\\GREENPO\Desktop\Statistik"
+    network_folder = r"\\GREENPO\Statistik"
 
     today = datetime.now().strftime("%d.%m.%Y")
 
@@ -855,7 +855,7 @@ def resolve_code(code, mapping):
             values = [values]
 
         # 1. прямое совпадение ключа
-        if code == key.lower():
+        if re.match(rf"^{re.escape(key.lower())}(\s|$)", code):
             return key, "key"
 
         # 2. ищем лучшее совпадение
