@@ -90,7 +90,7 @@ running = True
 
 
 
-CURRENT_VERSION = "1.5"
+CURRENT_VERSION = "1.6"
 
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
@@ -846,29 +846,37 @@ def normalize_scan(data: str):
 def resolve_code(code, mapping):
     code = code.lower()
 
-    best_match = None
-    best_length = 0
+    # ===== Сначала проверяем ключи =====
+    for key in mapping:
+
+        if re.match(
+            rf"^{re.escape(key.lower())}([\s_\-:]|$)",
+            code
+        ):
+            return key, "key"
+
+    # ===== Собираем все возможные value =====
+    all_values = []
 
     for key, values in mapping.items():
 
         if isinstance(values, str):
             values = [values]
 
-        # 1. прямое совпадение ключа
-        if re.match(rf"^{re.escape(key.lower())}(\s|$)", code):
-            return key, "key"
-
-        # 2. ищем лучшее совпадение
         for v in values:
-            v_low = v.lower()
+            all_values.append((key, v.lower()))
 
-            if v_low in code:
-                if len(v_low) > best_length:
-                    best_length = len(v_low)
-                    best_match = key
+    # ===== Сортируем по длине =====
+    all_values.sort(
+        key=lambda x: len(x[1]),
+        reverse=True
+    )
 
-    if best_match:
-        return best_match, "value"
+    # ===== Ищем первое совпадение =====
+    for key, value in all_values:
+
+        if value in code:
+            return key, "value"
 
     return None, None
 
