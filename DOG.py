@@ -90,7 +90,7 @@ running = True
 
 
 
-CURRENT_VERSION = "1.6"
+CURRENT_VERSION = "1.7"
 
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
@@ -846,37 +846,44 @@ def normalize_scan(data: str):
 def resolve_code(code, mapping):
     code = code.lower()
 
-    # ===== Сначала проверяем ключи =====
-    for key in mapping:
+    best_key_match = None
+    best_key_length = 0
 
-        if re.match(
-            rf"^{re.escape(key.lower())}([\s_\-:]|$)",
-            code
-        ):
-            return key, "key"
-
-    # ===== Собираем все возможные value =====
-    all_values = []
+    best_value_match = None
+    best_value_length = 0
 
     for key, values in mapping.items():
 
+        key_low = key.lower()
+
+        # ===== поиск лучшего ключа =====
+        if re.match(
+            rf"^{re.escape(key_low)}([\s_\-:]|$)",
+            code
+        ):
+            if len(key_low) > best_key_length:
+                best_key_length = len(key_low)
+                best_key_match = key
+
+        # ===== поиск лучшего value =====
         if isinstance(values, str):
             values = [values]
 
         for v in values:
-            all_values.append((key, v.lower()))
 
-    # ===== Сортируем по длине =====
-    all_values.sort(
-        key=lambda x: len(x[1]),
-        reverse=True
-    )
+            v_low = v.lower()
 
-    # ===== Ищем первое совпадение =====
-    for key, value in all_values:
+            if v_low in code:
+                if len(v_low) > best_value_length:
+                    best_value_length = len(v_low)
+                    best_value_match = key
 
-        if value in code:
-            return key, "value"
+    # приоритет ключу
+    if best_key_match:
+        return best_key_match, "key"
+
+    if best_value_match:
+        return best_value_match, "value"
 
     return None, None
 
