@@ -42,7 +42,8 @@ REQUIRED_PACKAGES = [
     ("pygame", "pygame"),
     ("requests", "requests"),
     ("send2trash", "send2trash"),
-    ("win32event", "pywin32")
+    ("win32event", "pywin32"),
+    ("pypdf", "pypdf")
 
 ]
 
@@ -80,6 +81,7 @@ import winerror
 import ctypes
 import json
 import signal
+from pypdf import PdfReader, PdfWriter
 
 ser = None
 cap = None
@@ -90,7 +92,7 @@ running = True
 
 
 
-CURRENT_VERSION = "1.7"
+CURRENT_VERSION = "1.8"
 
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/DOG/main/version.txt"
 
@@ -629,38 +631,163 @@ def rename_mpdf(downloads_path, file_path):
     return new_path
 
 
+def wait_until_file_is_ready(file_path, timeout=60, interval=0.5):
+    """Wait until a download has stopped growing and can be opened."""
+    file_path = Path(file_path)
+    deadline = time.time() + timeout
+    previous_size = None
+    stable_checks = 0
+
+    while time.time() < deadline:
+        try:
+            current_size = file_path.stat().st_size
+            with open(file_path, "rb"):
+                pass
+
+            if current_size > 0 and current_size == previous_size:
+                stable_checks += 1
+                if stable_checks >= 2:
+                    return True
+            else:
+                stable_checks = 0
+
+            previous_size = current_size
+        except (FileNotFoundError, PermissionError, OSError):
+            stable_checks = 0
+
+        time.sleep(interval)
+
+    return False
+
+
+def find_latest_order_pdf(downloads_path):
+    """Return today's order PDF with the highest Part number."""
+    today = datetime.now().strftime("%d.%m.%Y")
+    pattern = re.compile(
+        rf"^{re.escape(today)} Part (\d+)\.pdf$",
+        re.IGNORECASE
+    )
+    candidates = []
+
+    for file in Path(downloads_path).iterdir():
+        if not file.is_file():
+            continue
+        match = pattern.match(file.name)
+        if match:
+            candidates.append((int(match.group(1)), file))
+
+    return max(candidates, key=lambda item: item[0])[1] if candidates else None
+
+
+def get_current_label_path(downloads_path):
+    order_pdf = find_latest_order_pdf(downloads_path)
+    if order_pdf is None:
+        return None
+    return order_pdf.with_name(f"{order_pdf.stem} (Label).pdf")
+
+
+def rename_label_pdf(downloads_path, file_path):
+    label_path = get_current_label_path(downloads_path)
+    if label_path is None:
+        raise FileNotFoundError(
+            "Не найден сегодняшний файл заказов вида DD.MM.YYYY Part N.pdf"
+        )
+
+    # A newly downloaded full label file is the current version, so replace an
+    # older local copy if one is present.
+    os.replace(file_path, label_path)
+    print(f"🏷️ Файл этикеток переименован: {label_path.name}")
+
+    threading.Thread(
+        target=copy_pdf_with_retry,
+        args=(label_path,),
+        daemon=True
+    ).start()
+
+    return label_path
+
+
+def append_label_fragment(downloads_path, fragment_path):
+    label_path = get_current_label_path(downloads_path)
+    if label_path is None:
+        raise FileNotFoundError(
+            "Не найден сегодняшний файл заказов вида DD.MM.YYYY Part N.pdf"
+        )
+    if not label_path.exists():
+        raise FileNotFoundError(
+            f"Не найден основной файл этикеток: {label_path.name}. "
+            "Сначала скачайте qwe.pdf"
+        )
+
+    temp_path = label_path.with_name(f".{label_path.stem}.merging.pdf")
+    writer = PdfWriter()
+
+    try:
+        for source_path in (label_path, Path(fragment_path)):
+            reader = PdfReader(str(source_path))
+            for page in reader.pages:
+                writer.add_page(page)
+
+        with open(temp_path, "wb") as output_file:
+            writer.write(output_file)
+
+        os.replace(temp_path, label_path)
+        Path(fragment_path).unlink()
+        print(f"➕ Фрагмент добавлен в: {label_path.name}")
+    finally:
+        writer.close()
+        if temp_path.exists():
+            temp_path.unlink()
+
+    threading.Thread(
+        target=copy_pdf_with_retry,
+        args=(label_path,),
+        daemon=True
+    ).start()
+
+    return label_path
+
+
 
 class PDFHandler(FileSystemEventHandler):
     def __init__(self, downloads_path):
         self.downloads_path = downloads_path
-        self.processing_now = False
+        self.processing_lock = threading.Lock()
 
     def on_created(self, event):
         if event.is_directory:
             return
 
-        file_path = Path(event.src_path)
+        self._handle_pdf(Path(event.src_path))
 
-        if file_path.name.lower() == "mpdf.pdf":
+    def on_moved(self, event):
+        if event.is_directory:
+            return
 
-            # 🔒 если уже обрабатываем — игнор
-            if self.processing_now:
+        self._handle_pdf(Path(event.dest_path))
+
+    def _handle_pdf(self, file_path):
+        file_name = file_path.name.lower()
+        if file_name not in {"mpdf.pdf", "qwe.pdf", "qwez.pdf"}:
+            return
+
+        with self.processing_lock:
+            print(f"🆕 Обнаружен {file_path.name}")
+
+            if not wait_until_file_is_ready(file_path):
+                print(f"❌ Файл не удалось открыть за 60 секунд: {file_path.name}")
                 return
 
-            self.processing_now = True
-
-            print("🆕 Обнаружен mpdf.pdf")
-            time.sleep(2)
-
             try:
-                new_file = rename_mpdf(self.downloads_path, file_path)
-                process_pdf(new_file)
-
+                if file_name == "mpdf.pdf":
+                    new_file = rename_mpdf(self.downloads_path, file_path)
+                    process_pdf(new_file)
+                elif file_name == "qwe.pdf":
+                    rename_label_pdf(self.downloads_path, file_path)
+                else:
+                    append_label_fragment(self.downloads_path, file_path)
             except Exception as e:
-                print(f"❌ Ошибка: {e}")
-
-            finally:
-                self.processing_now = False
+                print(f"❌ Ошибка обработки {file_path.name}: {e}")
 
 # ================= MAIN =================
 
@@ -689,7 +816,7 @@ def start_watchdog():
     observer.schedule(event_handler, downloads, recursive=False)
     observer.start()
 
-    print("👀 Ожидание mpdf.pdf в папке Загрузки...")
+    print("👀 Ожидание mpdf.pdf, qwe.pdf и qwez.pdf в папке Загрузки...")
 
     # 🔥 горячая клавиша
     keyboard.add_hotkey('F1', copy_photo_from_network)
