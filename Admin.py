@@ -8,6 +8,7 @@ console commands. Hardware and product mappings live in Admin_settings.json.
 from __future__ import annotations
 
 import importlib
+import io
 import math
 import os
 import queue
@@ -76,7 +77,7 @@ from watchdog.observers import Observer
 
 BASE_DIR = Path(__file__).resolve().parent
 SETTINGS_PATH = BASE_DIR / "Admin_settings.json"
-CURRENT_VERSION = "2.3"
+CURRENT_VERSION = "2.4"
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/Admin/main/version.txt"
 PYTHON_URL = "https://raw.githubusercontent.com/GreenPo-cloud/Admin/main/Admin.py"
 MUTEX_NAME = "GreenPoAdminProgramMutex"
@@ -719,6 +720,15 @@ def current_label_path(downloads: Path) -> Path | None:
     return order_pdf.with_name(f"{order_pdf.stem} (Label).pdf") if order_pdf else None
 
 
+def read_pdf_without_leading_junk(path: Path) -> PdfReader:
+    """Read a PDF after removing bytes placed before its required %PDF- header."""
+    data = path.read_bytes()
+    header_position = data.find(b"%PDF-")
+    if header_position < 0:
+        raise ValueError(f"PDF header was not found in {path.name}")
+    return PdfReader(io.BytesIO(data[header_position:]), strict=False)
+
+
 class PDFHandler(FileSystemEventHandler):
     def __init__(self, app: AdminApp):
         self.app = app
@@ -818,7 +828,7 @@ class PDFHandler(FileSystemEventHandler):
         writer = PdfWriter()
         try:
             for source in (destination, fragment):
-                reader = PdfReader(str(source))
+                reader = read_pdf_without_leading_junk(source)
                 for page in reader.pages:
                     writer.add_page(page)
             with temporary.open("wb") as output:
