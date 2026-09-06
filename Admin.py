@@ -77,9 +77,10 @@ from watchdog.observers import Observer
 
 BASE_DIR = Path(__file__).resolve().parent
 SETTINGS_PATH = BASE_DIR / "Admin_settings.json"
-CURRENT_VERSION = "2.4"
+CURRENT_VERSION = "2.5"
 VERSION_URL = "https://raw.githubusercontent.com/GreenPo-cloud/Admin/main/version.txt"
 PYTHON_URL = "https://raw.githubusercontent.com/GreenPo-cloud/Admin/main/Admin.py"
+READ_PUSH_URL = "https://raw.githubusercontent.com/GreenPo-cloud/Admin/main/ReadPush.py"
 MUTEX_NAME = "GreenPoAdminProgramMutex"
 
 
@@ -129,14 +130,20 @@ def check_for_updates() -> None:
 def update_program() -> None:
     response = requests.get(PYTHON_URL, timeout=15)
     response.raise_for_status()
+    read_push_response = requests.get(READ_PUSH_URL, timeout=15)
+    read_push_response.raise_for_status()
     current_file = Path(__file__).resolve()
     temporary_file = current_file.with_suffix(".py.new")
+    read_push_file = current_file.with_name("ReadPush.py")
+    temporary_read_push = read_push_file.with_suffix(".py.new")
     batch_file = current_file.with_suffix(".update.bat")
     temporary_file.write_text(response.text, encoding="utf-8")
+    temporary_read_push.write_text(read_push_response.text, encoding="utf-8")
     batch_file.write_text(
         "@echo off\n"
         "timeout /t 2 >nul\n"
         f'move /Y "{temporary_file}" "{current_file}" >nul\n'
+        f'move /Y "{temporary_read_push}" "{read_push_file}" >nul\n'
         f'start "" "{sys.executable}" "{current_file}"\n'
         'del "%~f0"\n',
         encoding="utf-8",
@@ -233,9 +240,31 @@ class AdminApp:
         self._start_thread(self.com_listener, "COM listener")
         self._start_thread(self.camera_worker, "camera worker")
         self._start_thread(self.pdf_copy_worker, "PDF copy worker")
+        self.start_push_listener()
         print("* Watching Downloads for mpdf.pdf, qwe.pdf and qwez.pdf")
         print("* Commands: cancel #1234567 | copy #1234567 | help | exit")
         self.console_loop()
+
+    def start_push_listener(self) -> None:
+        """Start the optional Slack toast listener when ReadPush.py is present."""
+        try:
+            from ReadPush import start_slack_notification_listener
+        except ModuleNotFoundError as error:
+            if error.name == "ReadPush":
+                print("* ReadPush.py is not installed; Slack push listener is disabled")
+            else:
+                print(f"! Slack push listener could not be loaded: {error}")
+            return
+        except Exception as error:
+            print(f"! Slack push listener could not be loaded: {error}")
+            return
+
+        try:
+            thread = start_slack_notification_listener(self.stop_event)
+            if thread is not None:
+                self.threads.append(thread)
+        except Exception as error:
+            print(f"! Slack push listener is disabled: {error}")
 
     def _start_thread(self, target, name: str) -> None:
         thread = threading.Thread(target=target, name=name, daemon=True)
